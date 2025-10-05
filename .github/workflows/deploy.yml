@@ -1,0 +1,60 @@
+name: Go deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - uses: actions/checkout@v2
+    - name: Checkout the repository
+      run: |
+        git config --global url."https://ssimuss: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@github.com".insteadOf https://github.com
+
+    - name: Set up Go 1.23
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1.23
+
+#    - name: Running tests
+#      run: go test ./... -cover
+#
+#    - name: Send noty to discord (Failure on running tests)
+#      uses: rjstone/discord-webhook-notify@v1
+#      if: failure()
+#      with:
+#        severity: error
+#        details: Telegram bot app tests are failed!
+#        webhookUrl: ${{ secrets.DISCORD_WEBHOOK }}
+
+    - name: Build app
+      run: go build -o monifi_bot
+
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+
+    - name: Adding Known Hosts
+      run: ssh-keyscan -p ${{ secrets.PORT }} ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy with rsync
+      run: rsync -avz -e 'ssh -p ${{ secrets.PORT }}' ./wishr_telegram_bot ${{ secrets.USER }}@${{ secrets.HOST }}:/home/wishr_telegram_bot
+
+    - name: Run scripts on the server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        script:
+          sudo supervisorctl restart wishrbot_service &&
+          sudo supervisorctl status wishrbot_service
